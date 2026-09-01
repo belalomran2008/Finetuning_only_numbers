@@ -19,7 +19,7 @@ st.write(
 )
 
 BASE_MODEL_NAME = "google/gemma-3-270m-it"
-ADAPTER_REPO = "BelalOmran/gemma3-numbers-only-adapter"  # 👈 REPLACE THIS
+ADAPTER_REPO = "BelalOmran/gemma3-numbers-only"  # 👈 REPLACE THIS
 
 
 # 2. Cache Model Loading (Runs only once)
