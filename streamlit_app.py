@@ -23,21 +23,32 @@ ADAPTER_REPO = "BelalOmran/gemma3-numbers-only-adapter"  # 👈 REPLACE THIS
 
 
 # 2. Cache Model Loading (Runs only once)
+# 2. Cache Model Loading (Runs only once)
 @st.cache_resource
 def load_model():
-  # Log in with secret token if available
-  if "HF_TOKEN" in st.secrets:
-    login(token=st.secrets["HF_TOKEN"])
-  elif "HF_TOKEN" in os.environ:
-    login(token=os.environ["HF_TOKEN"])
+  # Retrieve token safely from Streamlit Secrets or Environment
+  hf_token = None
+  try:
+    if "HF_TOKEN" in st.secrets:
+      hf_token = st.secrets["HF_TOKEN"]
+  except Exception:
+    pass
 
-  tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
+  if not hf_token:
+    hf_token = os.environ.get("HF_TOKEN")
+
+  if hf_token:
+    login(token=hf_token)
+
+  # Explicitly pass token to from_pretrained
+  tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME, token=hf_token)
   base_model = AutoModelForCausalLM.from_pretrained(
       BASE_MODEL_NAME,
       torch_dtype=torch.float32,
       low_cpu_mem_usage=True,
+      token=hf_token,
   )
-  model = PeftModel.from_pretrained(base_model, ADAPTER_REPO)
+  model = PeftModel.from_pretrained(base_model, ADAPTER_REPO, token=hf_token)
   model.eval()
   return tokenizer, model
 
