@@ -1,116 +1,98 @@
 import os
-from huggingface_hub import login
-from peft import PeftModel
+import re
 import streamlit as st
-import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    LogitsProcessor,
-    LogitsProcessorList,
-)
 
-# 1. Page Configuration
-st.set_page_config(page_title="Numbers-Only AI", page_icon="🔢", layout="centered")
+# Configure Keras backend before importing keras_hub
+os.environ.setdefault("KERAS_BACKEND", "tensorflow")
+
+import keras_hub
+
+st.set_page_config(
+    page_title="Gemma 3 Numbers-Only AI",
+    page_icon="🔢",
+    layout="centered"
+)
 
 st.title("🔢 Numbers-Only AI")
-st.write(
-    "Ask any question, and the fine-tuned Gemma 3 model will respond with **only the numeric answer**."
+st.markdown(
+    "Ask any question, and the fine-tuned **Gemma 3 (270M)** model will respond with **only the numeric answer**."
 )
 
-BASE_MODEL_NAME = "google/gemma-3-270m-it"
-ADAPTER_REPO = "BelalOmran/gemma3-numbers-only"  # 👈 REPLACE THIS
+MODEL_REPO = "hf://BelalOmran/gemma3-numbers-only"
+INSTRUCTION = "Answer with only a number. No words, no units, no punctuation.\n\n"
 
-
-# 2. Cache Model Loading (Runs only once)
-# 2. Cache Model Loading (Runs only once)
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading Gemma 3 model from Hugging Face...")
 def load_model():
-  # Retrieve token safely from Streamlit Secrets or Environment
-  hf_token = None
-  try:
-    if "HF_TOKEN" in st.secrets:
-      hf_token = st.secrets["HF_TOKEN"]
-  except Exception:
-    pass
+    """Load the KerasHub fine-tuned model preset directly."""
+    model = keras_hub.models.Gemma3CausalLM.from_preset(MODEL_REPO)
+    return model
 
-  if not hf_token:
-    hf_token = os.environ.get("HF_TOKEN")
+# Load model
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"Error loading model: {e}")
+    st.stop()
 
-  if hf_token:
-    login(token=hf_token)
+# Sidebar
+st.sidebar.header("⚙️ Settings")
+max_len = st.sidebar.slider("Max Sequence Length", min_value=32, max_value=256, value=128, step=16)
 
-  # Explicitly pass token to from_pretrained
-  tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME, token=hf_token)
-  base_model = AutoModelForCausalLM.from_pretrained(
-      BASE_MODEL_NAME,
-      torch_dtype=torch.float32,
-      low_cpu_mem_usage=True,
-      token=hf_token,
-  )
-  model = PeftModel.from_pretrained(base_model, ADAPTER_REPO, token=hf_token)
-  model.eval()
-  return tokenizer, model
+st.sidebar.markdown("---")
+st.sidebar.subheader("💡 Example Questions")
+examples = [
+    "What is the atomic number of uranium?",
+    "What is 33 multiplied by 49?",
+    "How many letters are in the Arabic alphabet?",
+    "What is the square root of 256?",
+    "Solve for x: 2x + -43 = -63. What is x?",
+    "What is the 10th number in the Fibonacci sequence, starting at 1 with 0?",
+    "How many stomachs does a cow have?",
+    "What is 20 percent of 95?",
+]
 
+if "user_query" not in st.session_state:
+    st.session_state["user_query"] = ""
 
-with st.spinner("Loading model into memory... (only takes ~15 seconds)"):
-  tokenizer, model = load_model()
+def set_example(q):
+    st.session_state["user_query"] = q
 
+for ex in examples:
+    if st.sidebar.button(ex, use_container_width=True):
+        set_example(ex)
 
-# 3. Constrained Decoding: Forces digits only
-class DigitsOnlyLogitsProcessor(LogitsProcessor):
+# Input Box
+user_input = st.text_area(
+    "Enter your question:",
+    value=st.session_state["user_query"],
+    placeholder="e.g. What is the atomic number of nitrogen?",
+    height=100
+)
 
-  def __init__(self, tokenizer):
-    allowed = set()
-    for token_id in range(len(tokenizer)):
-      piece = tokenizer.decode([token_id])
-      stripped = piece.strip()
-      if stripped == "" or all(c in "0123456789.-" for c in stripped):
-        allowed.add(token_id)
-    allowed.add(tokenizer.eos_token_id)
-    self.allowed_ids = torch.tensor(sorted(allowed))
+col1, col2 = st.columns([1, 4])
+with col1:
+    submit = st.button("Generate", type="primary", use_container_width=True)
 
-  def __call__(self, input_ids, scores):
-    mask = torch.full_like(scores, float("-inf"))
-    mask[:, self.allowed_ids.to(scores.device)] = scores[
-        :, self.allowed_ids.to(scores.device)
-    ]
-    return mask
-
-
-digits_processor = DigitsOnlyLogitsProcessor(tokenizer)
-
-
-# 4. Inference Function
-def get_numeric_answer(question):
-  messages = [{"role": "user", "content": question}]
-  inputs = tokenizer.apply_chat_template(
-      messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
-  )
-
-  output = model.generate(
-      inputs,
-      max_new_tokens=8,
-      do_sample=False,
-      logits_processor=LogitsProcessorList([digits_processor]),
-      pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
-  )
-
-  generated = output[0][inputs.shape[1] :]
-  return tokenizer.decode(generated, skip_special_tokens=True).strip()
-
-
-# 5. User Interface Form
-with st.form("qa_form"):
-  question = st.text_input(
-      "Question:", placeholder="e.g. How many legs does a spider have?"
-  )
-  submitted = st.form_submit_button("Get Answer")
-
-if submitted:
-  if question.strip():
-    with st.spinner("Calculating..."):
-      answer = get_numeric_answer(question)
-    st.success(f"**Answer:** `{answer}`")
-  else:
-    st.warning("Please enter a question first.")
+if submit and user_input.strip():
+    with st.spinner("Generating answer..."):
+        prompt = f"<start_of_turn>user\n{INSTRUCTION}{user_input.strip()}<end_of_turn>\n<start_of_turn>model\n"
+        raw_output = model.generate(prompt, max_length=int(max_len))
+        
+        if "<start_of_turn>model\n" in raw_output:
+            response = raw_output.split("<start_of_turn>model\n")[-1]
+        else:
+            response = raw_output[len(prompt):]
+        response = response.replace("<end_of_turn>", "").strip()
+        
+        match = re.search(r"-?\d+(?:\.\d+)?", response)
+        parsed_number = match.group(0) if match else "No number found"
+        
+        st.markdown("---")
+        st.subheader("🎯 Parsed Result")
+        st.metric(label="Answer", value=parsed_number)
+        
+        with st.expander("🔍 View Raw Output & Prompt"):
+            st.write("**Formatted Prompt:**")
+            st.code(prompt, language="text")
+            st.write("**Raw Model Completion:**")
+            st.code(response, language="text")
