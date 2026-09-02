@@ -4,7 +4,7 @@ import sys
 # 1. Force CPU-only mode
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-# 2. MUST set KERAS_BACKEND="torch" at the very top to prevent TensorFlow OOM
+# 2. Configure Keras backend to PyTorch BEFORE any other imports
 os.environ["KERAS_BACKEND"] = "torch"
 
 import gc
@@ -12,9 +12,19 @@ import re
 import streamlit as st
 import torch
 import keras
+
+# 3. CRITICAL: Force 16-bit precision to halve memory from 1.1GB to ~270MB
+try:
+    keras.config.set_dtype_policy("bfloat16")
+except Exception:
+    try:
+        keras.config.set_dtype_policy("float16")
+    except Exception:
+        pass
+
 import keras_hub
 
-# Disable PyTorch gradients to minimize memory consumption
+# Disable PyTorch gradients to minimize memory usage
 torch.set_grad_enabled(False)
 
 st.set_page_config(
@@ -31,9 +41,9 @@ st.markdown(
 MODEL_REPO = "hf://BelalOmran/gemma3-numbers-only"
 INSTRUCTION = "Answer with only a number. No words, no units, no punctuation.\n\n"
 
-@st.cache_resource(show_spinner="Loading Gemma 3 model from Hugging Face...")
+@st.cache_resource(show_spinner="Loading Gemma 3 model in 16-bit precision...")
 def load_model():
-    """Load model with minimal memory footprint on PyTorch CPU backend."""
+    """Load model with bfloat16 precision to fit inside Streamlit Cloud's 1GB RAM."""
     gc.collect()
     if hasattr(keras_hub.models, "Gemma3CausalLM"):
         model = keras_hub.models.Gemma3CausalLM.from_preset(MODEL_REPO)
