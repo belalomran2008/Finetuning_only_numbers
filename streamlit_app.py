@@ -2,7 +2,7 @@ import os
 import re
 import streamlit as st
 
-# Configure Keras to use PyTorch backend
+# Configure Keras backend to use PyTorch
 os.environ.setdefault("KERAS_BACKEND", "torch")
 
 import keras_hub
@@ -23,9 +23,15 @@ INSTRUCTION = "Answer with only a number. No words, no units, no punctuation.\n\
 
 @st.cache_resource(show_spinner="Loading Gemma 3 model from Hugging Face...")
 def load_model():
-    """Load the KerasHub fine-tuned model preset directly."""
-    model = keras_hub.models.Gemma3CausalLM.from_preset(MODEL_REPO)
-    return model
+    """Load the KerasHub fine-tuned model with dynamic class resolution."""
+    if hasattr(keras_hub.models, "Gemma3CausalLM"):
+        return keras_hub.models.Gemma3CausalLM.from_preset(MODEL_REPO)
+    elif hasattr(keras_hub.models, "CausalLM"):
+        return keras_hub.models.CausalLM.from_preset(MODEL_REPO)
+    elif hasattr(keras_hub.models, "GemmaCausalLM"):
+        return keras_hub.models.GemmaCausalLM.from_preset(MODEL_REPO)
+    else:
+        raise AttributeError("No suitable CausalLM loader found in installed keras_hub package.")
 
 # Load model
 try:
