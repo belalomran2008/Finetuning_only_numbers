@@ -1,5 +1,5 @@
 streamlit
-keras-hub>=0.17.0
-keras>=3.0.0
-tensorflow>=2.16.0
+keras-hub
+keras
+torch
 huggingface_hub
