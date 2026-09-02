@@ -1,14 +1,21 @@
 import os
+import sys
 
-# 1. Force CPU-only mode (eliminates CUDA driver probing errors)
+# 1. Force CPU-only mode
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-# 2. Set Keras backend to PyTorch before importing Keras
+# 2. MUST set KERAS_BACKEND="torch" at the very top to prevent TensorFlow OOM
 os.environ["KERAS_BACKEND"] = "torch"
 
+import gc
 import re
 import streamlit as st
+import torch
+import keras
 import keras_hub
+
+# Disable PyTorch gradients to minimize memory consumption
+torch.set_grad_enabled(False)
 
 st.set_page_config(
     page_title="Gemma 3 Numbers-Only AI",
@@ -26,15 +33,19 @@ INSTRUCTION = "Answer with only a number. No words, no units, no punctuation.\n\
 
 @st.cache_resource(show_spinner="Loading Gemma 3 model from Hugging Face...")
 def load_model():
-    """Load the KerasHub fine-tuned model with dynamic class resolution."""
+    """Load model with minimal memory footprint on PyTorch CPU backend."""
+    gc.collect()
     if hasattr(keras_hub.models, "Gemma3CausalLM"):
-        return keras_hub.models.Gemma3CausalLM.from_preset(MODEL_REPO)
+        model = keras_hub.models.Gemma3CausalLM.from_preset(MODEL_REPO)
     elif hasattr(keras_hub.models, "CausalLM"):
-        return keras_hub.models.CausalLM.from_preset(MODEL_REPO)
+        model = keras_hub.models.CausalLM.from_preset(MODEL_REPO)
     elif hasattr(keras_hub.models, "GemmaCausalLM"):
-        return keras_hub.models.GemmaCausalLM.from_preset(MODEL_REPO)
+        model = keras_hub.models.GemmaCausalLM.from_preset(MODEL_REPO)
     else:
         raise AttributeError("No suitable CausalLM loader found in installed keras_hub package.")
+    
+    gc.collect()
+    return model
 
 # Load model
 try:
@@ -85,7 +96,9 @@ with col1:
 if submit and user_input.strip():
     with st.spinner("Generating answer..."):
         prompt = f"<start_of_turn>user\n{INSTRUCTION}{user_input.strip()}<end_of_turn>\n<start_of_turn>model\n"
-        raw_output = model.generate(prompt, max_length=int(max_len))
+        
+        with torch.no_grad():
+            raw_output = model.generate(prompt, max_length=int(max_len))
         
         if "<start_of_turn>model\n" in raw_output:
             response = raw_output.split("<start_of_turn>model\n")[-1]
@@ -105,3 +118,5 @@ if submit and user_input.strip():
             st.code(prompt, language="text")
             st.write("**Raw Model Completion:**")
             st.code(response, language="text")
+        
+        gc.collect()
