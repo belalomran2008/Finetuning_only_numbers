@@ -2,8 +2,8 @@ import os
 import re
 import streamlit as st
 
-# Configure Keras backend before importing keras_hub
-os.environ.setdefault("KERAS_BACKEND", "tensorflow")
+# Configure Keras to use PyTorch backend
+os.environ.setdefault("KERAS_BACKEND", "torch")
 
 import keras_hub
 
