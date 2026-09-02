@@ -1,5 +1,5 @@
 streamlit
-git+https://github.com/keras-team/keras-hub.git
+keras-hub>=0.20.0
 keras>=3.0.0
 torch
 huggingface_hub
