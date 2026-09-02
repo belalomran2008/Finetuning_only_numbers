@@ -1,10 +1,13 @@
 import os
+
+# 1. Force CPU-only mode (eliminates CUDA driver probing errors)
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+# 2. Set Keras backend to PyTorch before importing Keras
+os.environ["KERAS_BACKEND"] = "torch"
+
 import re
 import streamlit as st
-
-# Configure Keras backend to use PyTorch
-os.environ.setdefault("KERAS_BACKEND", "torch")
-
 import keras_hub
 
 st.set_page_config(
